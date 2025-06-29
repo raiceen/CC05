@@ -1,0 +1,55 @@
+name: Deploy to PythonAnywhere
+
+on:
+  push:
+    branches: [main]  # Triggers on pushes to main branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest  # GitHub-hosted runner
+    
+    steps:
+    # Step 1: Checkout your repository
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    # Step 2: Set up Python environment
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.8"
+        
+    # Step 3: Install Python dependencies
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r backend/requirements.txt
+        
+    # Step 4: Deploy backend to PythonAnywhere
+    - name: Deploy Flask app
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: www.pythonanywhere.com
+        username: ${{ secrets.PYTHONANYWHERE_USERNAME }}
+        key: ${{ secrets.PYTHONANYWHERE_SSH_KEY }}
+        source: "backend/*"
+        target: "/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/mysite/"
+        overwrite: true
+        
+    # Step 5: Deploy frontend
+    - name: Deploy dashboard
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: www.pythonanywhere.com
+        username: ${{ secrets.PYTHONANYWHERE_USERNAME }}
+        key: ${{ secrets.PYTHONANYWHERE_SSH_KEY }}
+        source: "frontend/static/*"
+        target: "/home/${{ secrets.PYTHONANYWHERE_USERNAME }}/mysite/static/"
+        overwrite: true
+        
+    # Step 6: Reload PythonAnywhere app
+    - name: Reload application
+      run: python backend/post_deploy.py
+      env:
+        PYTHONANYWHERE_USERNAME: ${{ secrets.raiceen }}
+        PYTHONANYWHERE_TOKEN: ${{ secrets.62503e375405c886b30e695ef4a6533f0d3fa2bc }}
