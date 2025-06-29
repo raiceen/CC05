@@ -16,6 +16,7 @@
         .temp-value { color: #ff6b6b; }
         .humidity-value { color: #4dabf7; }
         .prediction-value { color: #51cf66; }
+        .threshold-control { margin: 20px 0; padding: 15px; background: #f8f8f8; border-radius: 8px; }
     </style>
 </head>
 <body>
@@ -42,6 +43,12 @@
         </div>
     </div>
 
+    <div class="threshold-control">
+        <h3>Temperature Alert Threshold</h3>
+        <input type="number" id="thresholdInput" value="30">
+        <button onclick="setThreshold()">Set Threshold</button>
+    </div>
+
     <div class="chart-container">
         <canvas id="temperatureChart"></canvas>
     </div>
@@ -54,41 +61,82 @@
         Last updated: <span id="lastUpdated">Never</span>
     </div>
 
-    <script>
-        const API_BASE = "http://raiceen.pythonanywhere.com";
-        const DATA_API = `${API_BASE}/data`;
-        const PREDICT_API = `${API_BASE}/predict`;
+    <div style="position: fixed; top: 10px; right: 10px; background: green; color: white; padding: 5px; z-index: 1000;" id="ci-cd-test">
+        Deployment Test
+    </div>
 
-        // Add API key to fetch requests
-        fetch(DATA_API, {
-            headers: {'X-API-Key': 'DASHBOARD_SECRET_456'}
-        })
+    <script>
+    // use relative paths so we always stay on the same origin & protocol
+        const API_BASE = "";
+        const DATA_API = "/data";
+        const PREDICT_API = "/predict";
+        const SET_THRESHOLD_API = "/set-threshold";
 
         let tempChart, humidityChart;
+        let lastUpdateTime = null;
 
         function initCharts() {
             const tempCtx = document.getElementById('temperatureChart').getContext('2d');
             tempChart = new Chart(tempCtx, {
                 type: 'line',
-                data: { labels: [], datasets: [{
-                    label: 'Temperature (°C)',
-                    data: [],
-                    borderColor: '#ff6b6b',
-                    backgroundColor: 'rgba(255, 107, 107, 0.1)',
-                    tension: 0.3
-                }]}
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Temperature (°C)',
+                        data: [],
+                        borderColor: '#ff6b6b',
+                        backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'Temperature (°C)'
+                            }
+                        }
+                    }
+                }
             });
 
             const humidityCtx = document.getElementById('humidityChart').getContext('2d');
             humidityChart = new Chart(humidityCtx, {
                 type: 'line',
-                data: { labels: [], datasets: [{
-                    label: 'Humidity (%)',
-                    data: [],
-                    borderColor: '#4dabf7',
-                    backgroundColor: 'rgba(77, 171, 247, 0.1)',
-                    tension: 0.3
-                }]}
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Humidity (%)',
+                        data: [],
+                        borderColor: '#4dabf7',
+                        backgroundColor: 'rgba(77, 171, 247, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: 'Humidity (%)'
+                            }
+                        }
+                    }
+                }
             });
         }
 
@@ -99,15 +147,23 @@
 
         async function updateDashboard() {
             try {
+                console.log("Fetching sensor data...");
+
                 // Get sensor data
                 const response = await fetch(DATA_API);
+
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch data: ${response.status}`);
+                }
+
                 const sensorData = await response.json();
+                console.log("Received sensor data:", sensorData);
 
                 // Update current readings
-                if(sensorData.length > 0) {
-                    const last = sensorData[sensorData.length-1];
-                    document.getElementById('currentTemp').textContent = last.temperature + ' °C';
-                    document.getElementById('currentHumidity').textContent = last.humidity + ' %';
+                if (sensorData.length > 0) {
+                    const lastEntry = sensorData[sensorData.length - 1];
+                    document.getElementById('currentTemp').textContent = `${lastEntry.temperature} °C`;
+                    document.getElementById('currentHumidity').textContent = `${lastEntry.humidity} %`;
                 }
 
                 // Update charts
@@ -121,27 +177,63 @@
                 humidityChart.update();
 
                 // Get prediction
+                console.log("Fetching prediction...");
                 const predictionResponse = await fetch(PREDICT_API);
+
+                if (!predictionResponse.ok) {
+                    throw new Error(`Failed to fetch prediction: ${predictionResponse.status}`);
+                }
+
                 const prediction = await predictionResponse.json();
-                document.getElementById('predictionValue').textContent = prediction.prediction + ' °C';
+                console.log("Received prediction:", prediction);
+
+                document.getElementById('predictionValue').textContent = `${prediction.prediction} °C`;
                 document.getElementById('predictionMessage').textContent = prediction.message;
 
                 // Update timestamp
-                document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+                lastUpdateTime = new Date();
+                document.getElementById('lastUpdated').textContent = lastUpdateTime.toLocaleTimeString();
 
             } catch (error) {
-                console.error("Error loading data:", error);
+                console.error("Dashboard error:", error);
+                document.getElementById('predictionMessage').textContent = "Error loading data";
+
+                // Update timestamp with error
+                document.getElementById('lastUpdated').textContent = `Error: ${error.message}`;
             }
         }
 
+        function setThreshold() {
+            const threshold = document.getElementById('thresholdInput').value;
+            console.log("Setting threshold to:", threshold);
+
+            fetch(SET_THRESHOLD_API, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ temperature: threshold })
+            })
+            .then(response => {
+                if (response.ok) {
+                    console.log("Threshold set successfully");
+                } else {
+                    console.error("Failed to set threshold:", response.status);
+                }
+            })
+            .catch(error => {
+                console.error("Error setting threshold:", error);
+            });
+        }
+
         // Initialize dashboard
-        window.onload = function() {
+        window.addEventListener('DOMContentLoaded', () => {
             initCharts();
             updateDashboard();
 
             // Update every 60 seconds
             setInterval(updateDashboard, 60000);
-        };
+        });
     </script>
 </body>
 </html>

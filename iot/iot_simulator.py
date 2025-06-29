@@ -2,7 +2,7 @@ import requests
 import time
 import random
 
-API_URL = "http://raiceen.pythonanywhere.com/data"
+API_URL = "https://raiceen.pythonanywhere.com/data"
 # Add headers to POST request
 headers = {
     'Content-Type': 'application/json',
