@@ -17,6 +17,42 @@
         .humidity-value { color: #4dabf7; }
         .prediction-value { color: #51cf66; }
         .threshold-control { margin: 20px 0; padding: 15px; background: #f8f8f8; border-radius: 8px; }
+        .threshold-card {
+          background: #fff5f5;
+          border-top: 4px solid #ff6b6b;   /* same as .temp-card accent */
+        }
+
+        /* Align the input & button nicely */
+        .threshold-input-group {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-top: 10px;
+        }
+
+        .threshold-input-group input {
+          flex: 1;
+          padding: 8px 12px;
+          font-size: 1rem;
+          border: 1px solid #ccc;
+          border-radius: 4px;
+        }
+
+        .threshold-input-group button {
+          padding: 8px 16px;
+          font-size: 1rem;
+          background-color: #ff6b6b;
+          border: none;
+          border-radius: 4px;
+          color: white;
+          cursor: pointer;
+          transition: background-color 0.2s ease;
+        }
+
+        .threshold-input-group button:hover {
+          background-color: #e55a5a;
+        }
+
     </style>
 </head>
 <body>
@@ -43,10 +79,12 @@
         </div>
     </div>
 
-    <div class="threshold-control">
-        <h3>Temperature Alert Threshold</h3>
-        <input type="number" id="thresholdInput" value="30">
-        <button onclick="setThreshold()">Set Threshold</button>
+    <div class="stat-card temp-card threshold-card">
+      <h3>Temperature Alert Threshold</h3>
+      <div class="threshold-input-group">
+        <input type="number" id="thresholdInput" value="30" min="0" max="100">
+        <button id="thresholdButton" onclick="setThreshold()">Set Threshold</button>
+      </div>
     </div>
 
     <div class="chart-container">
@@ -61,25 +99,23 @@
         Last updated: <span id="lastUpdated">Never</span>
     </div>
 
-    <div style="position: fixed; top: 10px; right: 10px; background: green; color: white; padding: 5px; z-index: 1000;" id="ci-cd-test">
-        Deployment Test
-    </div>
-
     <script>
-        const API_BASE = "http://raiceen.pythonanywhere.com";
-        const DATA_API = `${API_BASE}/data`;
-        const PREDICT_API = `${API_BASE}/predict`;
-        const SET_THRESHOLD_API = `${API_BASE}/set-threshold`;
-        
+    // use relative paths so we always stay on the same origin & protocol
+        const API_BASE = "";
+        const DATA_API = "/data";
+        const PREDICT_API = "/predict";
+        const SET_THRESHOLD_API = "/set-threshold";
+
         let tempChart, humidityChart;
         let lastUpdateTime = null;
+        let currentThreshold = 30;  // default
 
         function initCharts() {
             const tempCtx = document.getElementById('temperatureChart').getContext('2d');
             tempChart = new Chart(tempCtx, {
                 type: 'line',
-                data: { 
-                    labels: [], 
+                data: {
+                    labels: [],
                     datasets: [{
                         label: 'Temperature (°C)',
                         data: [],
@@ -109,8 +145,8 @@
             const humidityCtx = document.getElementById('humidityChart').getContext('2d');
             humidityChart = new Chart(humidityCtx, {
                 type: 'line',
-                data: { 
-                    labels: [], 
+                data: {
+                    labels: [],
                     datasets: [{
                         label: 'Humidity (%)',
                         data: [],
@@ -144,94 +180,115 @@
             return date.toLocaleTimeString();
         }
 
+        async function fetchThreshold() {
+          try {
+            const res = await fetch('/threshold');
+            if (res.ok) {
+              const json = await res.json();
+              currentThreshold = json.threshold;
+              console.log("Loaded threshold:", currentThreshold);
+            }
+          } catch (e) {
+            console.warn("Could not load threshold, using default", e);
+          }
+        }
+
+
         async function updateDashboard() {
             try {
                 console.log("Fetching sensor data...");
-                
+
                 // Get sensor data
                 const response = await fetch(DATA_API);
-                
+
                 if (!response.ok) {
                     throw new Error(`Failed to fetch data: ${response.status}`);
                 }
-                
+
                 const sensorData = await response.json();
                 console.log("Received sensor data:", sensorData);
-                
+
                 // Update current readings
                 if (sensorData.length > 0) {
                     const lastEntry = sensorData[sensorData.length - 1];
                     document.getElementById('currentTemp').textContent = `${lastEntry.temperature} °C`;
+                    const tempEl = document.getElementById('currentTemp');
+                    const tempCard = document.querySelector('.temp-card');
+                    if (lastEntry.temperature > currentThreshold) {
+                      // highlight the card in red
+                      tempCard.style.borderTopColor     = '#ff0000';
+                      tempCard.style.backgroundColor    = '#ffe5e5';
+                      // optionally show an alert message:
+                      alert(`ALERT! Temperature is ${lastEntry.temperature} °C which exceeds your threshold of ${currentThreshold} °C.`);
+                    } else {
+                      // reset to normal
+                      tempCard.style.borderTopColor     = '';
+                      tempCard.style.backgroundColor    = '';
+                    }
                     document.getElementById('currentHumidity').textContent = `${lastEntry.humidity} %`;
                 }
-                
+
                 // Update charts
                 const labels = sensorData.map(d => formatTime(d.timestamp));
                 tempChart.data.labels = labels;
                 tempChart.data.datasets[0].data = sensorData.map(d => d.temperature);
                 tempChart.update();
-                
+
                 humidityChart.data.labels = labels;
                 humidityChart.data.datasets[0].data = sensorData.map(d => d.humidity);
                 humidityChart.update();
-                
+
                 // Get prediction
                 console.log("Fetching prediction...");
                 const predictionResponse = await fetch(PREDICT_API);
-                
+
                 if (!predictionResponse.ok) {
                     throw new Error(`Failed to fetch prediction: ${predictionResponse.status}`);
                 }
-                
+
                 const prediction = await predictionResponse.json();
                 console.log("Received prediction:", prediction);
-                
+
                 document.getElementById('predictionValue').textContent = `${prediction.prediction} °C`;
                 document.getElementById('predictionMessage').textContent = prediction.message;
-                
+
                 // Update timestamp
                 lastUpdateTime = new Date();
                 document.getElementById('lastUpdated').textContent = lastUpdateTime.toLocaleTimeString();
-                
+
             } catch (error) {
                 console.error("Dashboard error:", error);
                 document.getElementById('predictionMessage').textContent = "Error loading data";
-                
+
                 // Update timestamp with error
                 document.getElementById('lastUpdated').textContent = `Error: ${error.message}`;
             }
         }
 
         function setThreshold() {
-            const threshold = document.getElementById('thresholdInput').value;
-            console.log("Setting threshold to:", threshold);
-            
-            fetch(SET_THRESHOLD_API, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ temperature: threshold })
-            })
-            .then(response => {
-                if (response.ok) {
-                    console.log("Threshold set successfully");
-                } else {
-                    console.error("Failed to set threshold:", response.status);
-                }
-            })
-            .catch(error => {
-                console.error("Error setting threshold:", error);
-            });
+          const thr = parseFloat(document.getElementById('thresholdInput').value);
+          fetch('/set-threshold', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({temperature: thr})
+          })
+          .then(res => {
+            if (res.ok) {
+              currentThreshold = thr;
+              console.log("Threshold updated to", thr);
+            }
+          })
+          .catch(console.error);
         }
+
 
         // Initialize dashboard
         window.addEventListener('DOMContentLoaded', () => {
             initCharts();
             updateDashboard();
-            
+
             // Update every 60 seconds
-            setInterval(updateDashboard, 60000);
+            setInterval(updateDashboard, 10000);
         });
     </script>
 </body>
